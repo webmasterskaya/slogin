@@ -1,6 +1,11 @@
 <?php
 // No direct access to this file
-defined('_JEXEC') or die('Restricted Access');
+defined('_JEXEC') or die();
+
+/**
+ * @var \Joomla\Component\SLogin\Administrator\View\Users\HtmlView $this
+ */
+
 ?>
 <?php foreach($this->items as $i => $item): ?>
 	<tr class="row<?php echo $i % 2; ?>">
