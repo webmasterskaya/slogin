@@ -21,22 +21,17 @@ defined('_JEXEC') or die();
  * @package		Joomla.Administrator
  * @subpackage	com_slogin
  */
-class SLoginController extends BaseController
+class DisplayController extends BaseController
 {
-	/**
-	 * @param $cachable
-	 * @param $urlparams
-	 *
-	 * @return SLoginController|void
-	 *
-	 * @throws Exception
-	 * @since version
-	 */
-	public function display($cachable = false, $urlparams = false)
-	{
-		$this->default_view = 'settings';
-		parent::display($cachable, $urlparams);
-	}
+
+    /**
+     * The default view.
+     *
+     * @var  string
+     *
+     * @since  1.0.0
+     */
+    protected $default_view = 'settings';
 
     public function clean()
     {
