@@ -8,20 +8,12 @@
  * @license 	GNU/GPL v.3 or later.
  */
 
-// No direct access.
+namespace Joomla\Component\SLogin\Controller;
+
 use Joomla\CMS\Factory;
+use Joomla\CMS\MVC\Controller\BaseController;
 
-defined('_JEXEC') or die('(@)|(@)');
-
-//костыль для поддержки 2 и  3 джумлы
-if(!class_exists('SLoginControllerParent')){
-    if(class_exists('JControllerLegacy')){
-        class SLoginControllerParent extends JControllerLegacy{}
-    }
-    else{
-        class SLoginControllerParent extends JController{}
-    }
-}
+defined('_JEXEC') or die();
 
 /**
  * SLogin Main Controller
@@ -29,7 +21,7 @@ if(!class_exists('SLoginControllerParent')){
  * @package		Joomla.Administrator
  * @subpackage	com_slogin
  */
-class SLoginController extends SLoginControllerParent
+class SLoginController extends BaseController
 {
 	/**
 	 * @param $cachable
