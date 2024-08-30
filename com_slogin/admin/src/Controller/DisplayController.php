@@ -2,27 +2,41 @@
 /**
  * SLogin
  *
- * @version 	2.9.1
- * @author		SmokerMan, Arkadiy, Joomline
- * @copyright	© 2012-2020. All rights reserved.
- * @license 	GNU/GPL v.3 or later.
+ * @version       2.9.1
+ * @author        SmokerMan, Arkadiy, Joomline
+ * @copyright     © 2012-2020. All rights reserved.
+ * @license       GNU/GPL v.3 or later.
  */
 
-namespace Joomla\Component\SLogin\Controller;
+namespace Joomla\Component\SLogin\Administrator\Controller;
 
+use Joomla\CMS\Application\CMSApplication;
 use Joomla\CMS\Factory;
+use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\Controller\BaseController;
+use Joomla\CMS\MVC\Factory\MVCFactoryInterface;
+use Joomla\CMS\Plugin\PluginHelper;
+use Joomla\CMS\User\User;
+use Joomla\Component\SLogin\Administrator\Event\DeleteUserEvent;
+use Joomla\Component\SLolgin\Administrator\Model\UserModel;
+use Joomla\Component\SLolgin\Administrator\Table\UsersTable;
+use Joomla\Database\DatabaseAwareTrait;
+use Joomla\Database\DatabaseInterface;
+use Joomla\Database\ParameterType;
+use Joomla\Input\Input;
 
 defined('_JEXEC') or die();
 
 /**
  * SLogin Main Controller
  *
- * @package		Joomla.Administrator
- * @subpackage	com_slogin
+ * @package        Joomla.Administrator
+ * @subpackage     com_slogin
  */
 class DisplayController extends BaseController
 {
+
+    use DatabaseAwareTrait;
 
     /**
      * The default view.
@@ -33,131 +47,199 @@ class DisplayController extends BaseController
      */
     protected $default_view = 'settings';
 
-    public function clean()
+    public function __construct($config = [], MVCFactoryInterface $factory = null, ?CMSApplication $app = null, ?Input $input = null)
     {
-        // Check for request forgeries.
-        JSession::checkToken() or jexit(JText::_('JINVALID_TOKEN'));
+        parent::__construct($config, $factory, $app, $input);
 
-        $db = JFactory::getDbo();
-        $query = 'TRUNCATE TABLE  `#__slogin_users`';
-        $db->setQuery($query);
-        if (!$db->execute()) {
-            $msg = $db->getErrorMsg();
-            $msgType = 'error';
-        }
-        else{
-            $msg = 'Table cleared';
-            $msgType = 'message';
-        }
-
-
-        $app = JFactory::getApplication();
-	    $app->enqueueMessage($msg, $msgType);
-        $app->redirect('index.php?option=com_slogin&view=settings');
-    }
-    public function repair()
-    {
-        $db = JFactory::getDbo();
-        $query = $db->getQuery(true);
-        $query->select('s.user_id');
-        $query->from('#__slogin_users as s');
-        $query->leftJoin('#__users as u ON u.id = s.user_id');
-        $query->where('u.id IS NULL');
-        $db->setQuery($query);
-        $uids = $db->loadColumn();
-        if(is_array($uids) && count($uids)>0){
-            $query = $db->getQuery(true);
-            $query->delete('#__slogin_users');
-            $query->where('user_id IN ('.implode(', ', $uids).')');
-            $db->setQuery($query);
-            if (!$db->execute()) {
-                $msg = $db->getErrorMsg();
-                $msgType = 'error';
-            }
-            else{
-                $msg = 'Table repaired';
-                $msgType = 'message';
-            }
-        }else{
-            $msg = 'Bad rows is not detected';
-            $msgType = 'message';
-        }
-        $app = JFactory::getApplication();
-	    $app->enqueueMessage($msg, $msgType);
-        $app->redirect('index.php?option=com_slogin&view=settings');
-	}
-
-    public function remove_slogin_users(){
-        $input = new Joomla\Input\Input();
-        JPluginHelper::importPlugin('slogin_integration');
-        $app = JFactory::getApplication();
-        $ids = $input->get('cid', array(), 'ARRAY');
-        $model = $this->getModel('User', 'SloginModel');
-        $table = $model->getTable();
-        $errors = array();
-        if(count($ids) > 0){
-            foreach($ids as $id){
-	            Factory::getApplication()->triggerEvent('onBeforeSloginDeleteSloginUser',array((int)$id));
-                if (!$table->delete((int)$id)) {
-                    $errors[] = $table->getError();
-                }
-                else{
-	                Factory::getApplication()->triggerEvent('onAfterSloginDeleteSloginUser',array((int)$id));
-                }
-            }
-        }
-        $msg = '';
-        $msgType = JText::_('COM_SLOGIN_USERS_DELETED');
-        if(count($errors)){
-            $msg = implode('<br/>', $errors);
-            $msgType = 'error';
-        }
-	    $app->enqueueMessage($msg, $msgType);
-	    $app->redirect('index.php?option=com_slogin&view=users');
+        $this->setDatabase(Factory::getContainer()->get(DatabaseInterface::class));
     }
 
-    public function remove_joomla_users(){
-        $input = new Joomla\Input\Input();
-        JPluginHelper::importPlugin('slogin_integration');
-        $app = JFactory::getApplication();
-        $ids = $input->get('cid', array(), 'ARRAY');
-        $model = $this->getModel('User', 'SloginModel');
-        $table = $model->getTable();
-        $errors = array();
-        $db = JFactory::getDbo();
-        $user = new JUser();
-        if(count($ids) > 0){
-            foreach($ids as $id){
-                $query = $db->getQuery(true);
-                $query->select('user_id');
-                $query->from('#__slogin_users');
-                $query->where('id = '.(int)$id);
-                $db->setQuery((string)$query, 0, 1);
-                $userId = $db->loadResult();
-	            Joomla\CMS\Factory::getApplication()->triggerEvent('onBeforeSloginDeleteUser',array($userId));
+    public function clean(): void
+    {
+        $this->checkToken();
 
-                if (!$table->delete((int)$id)) {
+        try
+        {
+            $query = 'TRUNCATE TABLE  `#__slogin_users`';
+
+            $this->getDatabase()
+                ->setQuery($query)
+                ->execute();
+
+            $this->app->enqueueMessage(Text::_('COM_SLOGIN_USERS_TABLE_CLEARED'), 'message');
+        }
+        catch (\Exception $e)
+        {
+            $this->app->enqueueMessage($e->getMessage(), 'error');
+        }
+
+        $this->app->redirect('index.php?option=com_slogin&view=settings');
+    }
+
+    public function repair(): void
+    {
+        try
+        {
+            $db = $this->getDatabase();
+
+            $uids = $db->setQuery(
+                $db->getQuery(true)
+                    ->select('s.user_id')
+                    ->from($db->quoteName('#__slogin_users', 's'))
+                    ->leftJoin($db->quoteName('#__users', 'u') . ' ON u.id = s.user_id')
+                    ->where('u.id IS NULL')
+            )->loadColumn();
+        }
+        catch (\Exception $e)
+        {
+            $this->app->enqueueMessage($e->getMessage(), 'error');
+            $this->app->redirect('index.php?option=com_slogin&view=settings');
+
+            return;
+        }
+
+
+        if (is_array($uids) && !empty($uids))
+        {
+            try
+            {
+                $db->setQuery(
+                    $db->getQuery(true)
+                        ->delete($db->quoteName('#__slogin_users'))
+                        ->where($db->quoteName('user_id') . ' IN (' . implode(', ', $uids) . ')')
+                )->execute();
+
+                $this->app->enqueueMessage(Text::_('COM_SLOGIN_USERS_TABLE_REPAIRED'), 'message');
+            }
+            catch (\Exception $e)
+            {
+                $this->app->enqueueMessage($e->getMessage(), 'error');
+            }
+        }
+        else
+        {
+            $this->app->enqueueMessage(Text::_('COM_SLOGIN_USERS_TABLE_NOTHING_TO_REPAIR'), 'message');
+        }
+
+        $this->app->redirect('index.php?option=com_slogin&view=settings');
+    }
+
+    /**
+     * @return void
+     * @throws \Exception
+     */
+    public function remove_slogin_users(): void
+    {
+        PluginHelper::importPlugin('slogin_integration');
+
+        $dispatcher            = $this->getDispatcher();
+        $beforeDeleteEventName = 'onBeforeSloginDeleteSloginUser';
+        $afterDeleteEventName  = 'onAfterSloginDeleteSloginUser';
+
+        /** @var UserModel $model */
+        $model = $this->getModel('User', 'Administrator');
+        /** @var UsersTable $table */
+        $table  = $model->getTable();
+        $ids    = $this->input->get('cid', [], 'ARRAY');
+        $errors = [];
+
+        if (count($ids) > 0)
+        {
+            foreach ($ids as $id)
+            {
+                $dispatcher->dispatch($beforeDeleteEventName, new DeleteUserEvent($beforeDeleteEventName, ['id' => (int) $id]));
+
+                if (!$table->delete((int) $id))
+                {
                     $errors[] = $table->getError();
                 }
-                else{
+                else
+                {
+                    $dispatcher->dispatch($afterDeleteEventName, new DeleteUserEvent($afterDeleteEventName, ['id' => (int) $id]));
+                }
+            }
+        }
+
+        if (!empty($errors))
+        {
+            $this->app->enqueueMessage(implode('<br/>', $errors), 'error');
+        }
+        else
+        {
+            $this->app->enqueueMessage(Text::_('COM_SLOGIN_USERS_DELETED'), 'message');
+        }
+
+        $this->app->redirect('index.php?option=com_slogin&view=users');
+    }
+
+    public function remove_joomla_users(): void
+    {
+        PluginHelper::importPlugin('slogin_integration');
+
+        $dispatcher            = $this->getDispatcher();
+        $beforeDeleteEventName = 'onBeforeSloginDeleteUser';
+        $afterDeleteEventName  = 'onAfterSloginDeleteUser';
+
+        /** @var UserModel $model */
+        $model = $this->getModel('User', 'Administrator');
+        /** @var UsersTable $table */
+        $table  = $model->getTable();
+        $ids    = $this->input->get('cid', [], 'ARRAY');
+        $errors = [];
+        $user   = new User();
+        $db     = $this->getDatabase();
+
+        if (count($ids) > 0)
+        {
+            foreach ($ids as $id)
+            {
+                $userId = $db->setQuery(
+                    $db->getQuery(true)
+                        ->select($db->quoteName('user_id'))
+                        ->from($db->quoteName('#__slogin_users'))
+                        ->where('id = :user_id')
+                        ->bind(':user_id', $id, ParameterType::INTEGER)
+                )->loadResult();
+
+                $dispatcher->dispatch($beforeDeleteEventName, new DeleteUserEvent($beforeDeleteEventName, ['id' => (int) $userId]));
+
+                try
+                {
+                    if (!$table->delete((int) $id))
+                    {
+                        throw new \RuntimeException($table->getError());
+                    }
+
                     $user->id = $userId;
-                    $user->delete();
-                    if (!$table->deleteUserRows($userId)){
-                        $errors[] = $table->getError();
+
+                    if (!$user->delete())
+                    {
+                        throw new \RuntimeException($user->getError());
                     }
-                    else{
-	                    Joomla\CMS\Factory::getApplication()->triggerEvent('onAfterSloginDeleteUser',array($userId));
+
+                    if (!$table->deleteUserRows($userId))
+                    {
+                        throw new \RuntimeException($table->getError());
                     }
+
+                    $dispatcher->dispatch($afterDeleteEventName, new DeleteUserEvent($afterDeleteEventName, ['id' => (int) $userId]));
+                }
+                catch (\Exception $e)
+                {
+                    $errors[] = $e->getMessage();
                 }
             }
         }
-        $msg = JText::_('COM_SLOGIN_USERS_DELETED');
-        $msgType = 'msg';
-        if(count($errors)){
-            $msg = implode('<br/>', $errors);
-            $msgType = 'error';
+
+        if (!empty($errors))
+        {
+            $this->app->enqueueMessage(implode('<br/>', $errors), 'error');
         }
-	    $app->enqueueMessage($msg, $msgType);
-	    $app->redirect('index.php?option=com_slogin&view=users');
+        else
+        {
+            $this->app->enqueueMessage(Text::_('COM_SLOGIN_USERS_DELETED'), 'message');
+        }
+
+        $this->app->redirect('index.php?option=com_slogin&view=users');
     }
 }
